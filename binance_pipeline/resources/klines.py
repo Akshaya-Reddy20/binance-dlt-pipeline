@@ -49,12 +49,12 @@ def klines(
     symbols: list[str] = None,
     interval: str = None,
     start_time_ms: int | None = None,
-    incremental=dlt.sources.incremental("open_time", initial_value=settings.START_TIME_MS, last_value_func=max),
+    incremental=dlt.sources.incremental("open_time", initial_value=settings.START_TIME_MS if hasattr(settings, "START_TIME_MS") else 1609459200000),
 ):
     if symbols is None:
-        symbols = settings.SYMBOLS
+        symbols = settings.SYMBOLS if hasattr(settings, "SYMBOLS") else ["BTCUSDT", "ETHUSDT"]
     if interval is None:
-        interval = settings.INTERVAL
+        interval = settings.KLINES_INTERVAL if hasattr(settings, "KLINES_INTERVAL") else "1h"
 
     if interval not in _INTERVAL_MS:
         raise ValueError(f"Unsupported INTERVAL={interval}. Choose one of: {', '.join(_INTERVAL_MS)}")
@@ -62,7 +62,7 @@ def klines(
     # Determine where to start from: saved cursor -> explicit arg -> settings
     cursor_start = (getattr(incremental, "last_value", None)
                     if getattr(incremental, "last_value", None) is not None
-                    else settings.START_TIME_MS)
+                    else settings.START_TIME_MS if hasattr(settings, "START_TIME_MS") else 1609459200000)
     if start_time_ms is not None:
         cursor_start = start_time_ms
 

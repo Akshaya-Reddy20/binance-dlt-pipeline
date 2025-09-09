@@ -1,35 +1,71 @@
 from __future__ import annotations
-import time
-import typing as t
+from typing import Any, Dict, Optional
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from .. import settings
 
-class HttpError(RuntimeError):
-    pass
+# A single Session with sensible retries/backoff.
+_session = requests.Session()
+_retries = Retry(
+    total=5,
+    connect=5,
+    read=5,
+    backoff_factor=0.5,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["GET"],
+    raise_on_status=False,
+)
+_session.mount("https://", HTTPAdapter(max_retries=_retries))
+_session.headers.update({
+    "Accept": "application/json",
+    # Some environments/networks are picky; a UA helps avoid weird blocks.
+    "User-Agent": "binance-pipeline/1.0 (+requests)",
+    # Avoid lingering sockets in flaky networks
+    "Connection": "close",
+})
 
-def get_json(path: str, params: dict[str, t.Any] | None = None) -> t.Any:
-    """Simple GET with basic retry/backoff against Binance REST."""
-    url = path if path.startswith("http") else settings.BASE_URL.rstrip("/") + path
-    retries = settings.HTTP_MAX_RETRIES
-    last_exc: Exception | None = None
+def _normalize_path(path: str) -> str:
+    p = path or "/"
+    if not p.startswith("/"):
+        p = "/" + p
+    return p
 
-    for attempt in range(1, retries + 1):
+def get_json(path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+    """
+    Try each configured Binance base URL in order until one works.
+    """
+    p = _normalize_path(path)
+
+    last_err: Optional[Exception] = None
+    for base in settings.BINANCE_BASE_URLS:
+        base = base.rstrip("/")
+        url = base + p
         try:
-            time.sleep(settings.HTTP_PER_REQUEST_PAUSE)
-            resp = requests.get(url, params=params, timeout=30)
-            if resp.status_code == 429:
-                # basic respect of rate limit headers if present
-                retry_after = float(resp.headers.get("Retry-After", "1"))
-                time.sleep(max(retry_after, 1.0))
-                continue
+            resp = _session.get(
+                url,
+                params=params,
+                timeout=settings.REQUEST_TIMEOUT,
+                verify=settings.VERIFY_SSL,
+            )
             resp.raise_for_status()
             return resp.json()
-        except Exception as e:
-            last_exc = e
-            if attempt < retries:
-                time.sleep(settings.HTTP_RETRY_SLEEP * attempt)
-                continue
-            break
+        except requests.exceptions.SSLError as e:
+            # TLS handshake/EOF issues—try the next mirror host
+            last_err = e
+            continue
+        except requests.exceptions.RequestException as e:
+            # Network/timeouts/etc—try the next mirror host
+            last_err = e
+            continue
 
-    raise HttpError(f"GET {url} failed after {retries} attempts: {last_exc!r}")
+    # If we exhausted all hosts, bubble up the last error with a clearer hint.
+    hint = (
+        "All Binance hosts failed. If this keeps happening in your environment, you can try:\n"
+        "  - export VERIFY_SSL=false   (TEMPORARY ONLY; not recommended in production)\n"
+        "  - or set BINANCE_BASE_URLS to a working mirror.\n"
+    )
+    if last_err:
+        raise RuntimeError(f"{hint}Last error: {last_err}") from last_err
+    raise RuntimeError(hint + "No hosts configured.")

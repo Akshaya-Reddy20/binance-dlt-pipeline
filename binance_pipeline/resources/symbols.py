@@ -1,4 +1,6 @@
 from __future__ import annotations
+from .. import settings
+
 import dlt
 
 from ..utils.http import get_json
@@ -12,6 +14,12 @@ def exchange_info():
     """Fetch symbols/filters from /api/v3/exchangeInfo"""
     data = get_json("/api/v3/exchangeInfo")
     symbols = data.get("symbols", [])
+    if not symbols:
+        # fallback to defaults if API or .env config not available
+        symbols = [
+            {"symbol": "BTCUSDT", "status": "TRADING", "baseAsset": "BTC", "quoteAsset": "USDT"},
+            {"symbol": "ETHUSDT", "status": "TRADING", "baseAsset": "ETH", "quoteAsset": "USDT"},
+        ]
     # you can trim/normalize fields here if you want
     for s in symbols:
         # keep only a subset to make the schema sane

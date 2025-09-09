@@ -1,56 +1,39 @@
+from __future__ import annotations
 import os
-from datetime import datetime, timedelta, timezone
 
-from dotenv import load_dotenv
+# ---- Destination selection ----
+DESTINATION = os.getenv("DESTINATION", "postgres").lower()
 
-load_dotenv()
+# ---- Postgres connection ----
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5433"))
+POSTGRES_DATABASE = os.getenv("POSTGRES_DATABASE", "binance_dw")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "dlt_user")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "root")
 
-def getenv(key: str, default: str | None = None) -> str | None:
-    v = os.getenv(key, default)
-    return v if v not in ("", None) else default
+# ---- DuckDB (optional) ----
+DUCKDB_DATABASE = os.getenv("DUCKDB_DATABASE", "./binance.duckdb")
 
-ENV = getenv("ENV", "dev")
-BASE_URL = getenv("BASE_URL", "https://api.binance.com")
+# ---- Binance API ----
+# Public REST base (no key needed for the endpoints we use)
+BASE_URL = os.getenv("BINANCE_BASE_URL", "https://api.binance.com")
 
-# Symbols list as ["BTCUSDT", "ETHUSDT", ...]
-SYMBOLS = [s.strip().upper() for s in getenv("SYMBOLS", "BTCUSDT").split(",") if s.strip()]
+# Start time for klines incremental (default: 2018-01-01 UTC)
+START_TIME_MS = int(os.getenv("START_TIME_MS", "1514764800000"))
 
-INTERVAL = getenv("INTERVAL", "1h")
+# HTTP behaviour
+REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "30"))
+MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 
-# Start time seed: ISO8601 or ms since epoch
-START_TIME_RAW = getenv("START_TIME", "")
+# ---- Binance HTTP fallbacks / TLS options ----
+# Comma-separated list of base URLs we'll try in order
+BINANCE_BASE_URLS = [
+    u.strip() for u in os.getenv(
+        "BINANCE_BASE_URLS",
+        "https://api.binance.com,https://api1.binance.com,https://api2.binance.com,https://api3.binance.com",
+    ).split(",")
+    if u.strip()
+]
 
-def _resolve_start_time_ms() -> int:
-    if START_TIME_RAW:
-        # try ms epoch
-        if START_TIME_RAW.isdigit():
-            return int(START_TIME_RAW)
-        # try ISO8601
-        try:
-            dt = datetime.fromisoformat(START_TIME_RAW.replace("Z", "+00:00"))
-            return int(dt.timestamp() * 1000)
-        except Exception:
-            pass
-    # default: 30 days back from now
-    dt = datetime.now(timezone.utc) - timedelta(days=30)
-    return int(dt.timestamp() * 1000)
-
-START_TIME_MS = _resolve_start_time_ms()
-
-# Destination
-DESTINATION = getenv("DESTINATION", "duckdb").lower()
-
-# DuckDB config
-DUCKDB_DATABASE = getenv("DUCKDB_DATABASE", "./binance.duckdb")
-
-# ClickHouse (for later)
-CLICKHOUSE_HOST = getenv("CLICKHOUSE_HOST", "localhost")
-CLICKHOUSE_PORT = int(getenv("CLICKHOUSE_PORT", "8123") or 8123)
-CLICKHOUSE_DATABASE = getenv("CLICKHOUSE_DATABASE", "binance")
-CLICKHOUSE_USER = getenv("CLICKHOUSE_USER", "default")
-CLICKHOUSE_PASSWORD = getenv("CLICKHOUSE_PASSWORD", "")
-
-# Simple HTTP settings
-HTTP_MAX_RETRIES = int(getenv("HTTP_MAX_RETRIES", "3") or 3)
-HTTP_RETRY_SLEEP = float(getenv("HTTP_RETRY_SLEEP", "1.0") or 1.0)  # seconds
-HTTP_PER_REQUEST_PAUSE = float(getenv("HTTP_PER_REQUEST_PAUSE", "0.2") or 0.2)  # seconds
+# Set to "false" to temporarily skip TLS verification (ONLY if you must)
+VERIFY_SSL = os.getenv("VERIFY_SSL", "true").lower() not in ("0", "false", "no")

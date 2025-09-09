@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: clickhouse
+    ports:
+      - "18123:8123"   # HTTP API (DBeaver + dlt default)
+      - "19000:9000"   # Native TCP (optional, for GUIs/clients)
+    environment:
+      - CLICKHOUSE_DB=binance_db
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+      - CLICKHOUSE_USER=admin
+      - CLICKHOUSE_PASSWORD=admin_pass
+    volumes:
+      - ch_data:/var/lib/clickhouse
+      - ch_logs:/var/log/clickhouse-server
+
+volumes:
+  ch_data:
+  ch_logs:
