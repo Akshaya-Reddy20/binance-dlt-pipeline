@@ -1,21 +1,68 @@
-version: "3.8"
-
 services:
-  clickhouse:
-    image: clickhouse/clickhouse-server:24.8
-    container_name: clickhouse
-    ports:
-      - "18123:8123"   # HTTP API (DBeaver + dlt default)
-      - "19000:9000"   # Native TCP (optional, for GUIs/clients)
+  airflow-init:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    image: binance-airflow:latest
+    container_name: airflow_init
     environment:
-      - CLICKHOUSE_DB=binance_db
-      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
-      - CLICKHOUSE_USER=admin
-      - CLICKHOUSE_PASSWORD=admin_pass
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://dlt_user:root@host.docker.internal:5433/airflow
+      AIRFLOW_UID: "${AIRFLOW_UID:-50000}"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "your-generated-random-secret"
+    user: "0:0"
+    entrypoint: ["/bin/bash", "-c"]
+    command: >
+      airflow db init &&
+      airflow users create
+        -u admin -p admin -r Admin
+        -e admin@example.com -f Admin -l User
     volumes:
-      - ch_data:/var/lib/clickhouse
-      - ch_logs:/var/log/clickhouse-server
+      - ./dags:/opt/airflow/dags
+      - .:/opt/airflow/app
 
-volumes:
-  ch_data:
-  ch_logs:
+  airflow-webserver:
+    image: binance-airflow:latest
+    container_name: airflow_web
+    depends_on:
+      - airflow-init
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://dlt_user:root@host.docker.internal:5433/airflow
+      AIRFLOW_UID: "${AIRFLOW_UID:-50000}"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "your-generated-random-secret"
+      # ENV passed to tasks (Postgres target)
+      PGHOST: host.docker.internal
+      PGPORT: "5433"
+      PGUSER: dlt_user
+      PGPASSWORD: root
+      PGDATABASE: binance_dw
+      PYTHONPATH: /opt/airflow/app
+    ports:
+      - "8081:8080"
+    command: ["airflow", "webserver"]
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - .:/opt/airflow/app
+
+  airflow-scheduler:
+    image: binance-airflow:latest
+    container_name: airflow_sched
+    depends_on:
+      - airflow-init
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://dlt_user:root@host.docker.internal:5433/airflow
+      AIRFLOW_UID: "${AIRFLOW_UID:-50000}"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "your-generated-random-secret"
+      PGHOST: host.docker.internal
+      PGPORT: "5433"
+      PGUSER: dlt_user
+      PGPASSWORD: root
+      PGDATABASE: binance_dw
+      PYTHONPATH: /opt/airflow/app
+    command: ["airflow", "scheduler"]
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - .:/opt/airflow/app

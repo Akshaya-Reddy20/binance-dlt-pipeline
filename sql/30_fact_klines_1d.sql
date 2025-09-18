@@ -1,3 +1,6 @@
+-- ensure staging MV is current for this run
+REFRESH MATERIALIZED VIEW stg.klines_1h;
+
 -- Daily OHLCV derived from 1h candles
 
 create table if not exists core.fact_klines_1d (

@@ -41,3 +41,5 @@ with no data;
 
 create index if not exists ix_stg_klines_1h__symbol_time
   on stg.klines_1h(symbol, open_time_utc);
+
+REFRESH MATERIALIZED VIEW stg.klines_1h;
